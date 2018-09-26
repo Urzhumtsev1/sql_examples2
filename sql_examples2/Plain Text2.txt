@@ -1,0 +1,1018 @@
+student@student-VirtualBox:~/WORK/maps$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> \ir paths.sql 
+student=> \ir paths.sql 
+  iid  |     nd     
+-------+------------
+ 15249 | 291709577
+ 15249 | 2651601010
+ 15249 | 303035059
+ 15249 | 1194485185
+ 15249 | 4430318493
+ 15249 | 2128975444
+(6 rows)
+
+student=> \ir paths.sql 
+  iid  |    ref     | ordinal 
+-------+------------+---------
+ 15249 |  291709577 |       1
+ 15249 | 2651601010 |       2
+ 15249 |  303035059 |       3
+ 15249 | 1194485185 |       4
+ 15249 | 4430318493 |       5
+ 15249 | 2128975444 |       6
+(6 rows)
+
+student=> \ir paths.sql 
+  iid  |    ref     | ordinal |  iid   |                        pos                         
+-------+------------+---------+--------+----------------------------------------------------
+ 15249 | 2128975444 |       6 | 204783 | 0101000020E61000003280A6142AE142405EB642FDD3D44B40
+ 15249 | 2651601010 |       2 | 205075 | 0101000020E61000001659219B9AE14240BF2A172AFFD44B40
+ 15249 |  291709577 |       1 | 203220 | 0101000020E6100000E7F7A2E2A4E14240347D1B0703D54B40
+ 15249 | 1194485185 |       4 | 204263 | 0101000020E61000000766E0DB4FE142407A281B20E2D44B40
+ 15249 |  303035059 |       3 | 203302 | 0101000020E610000024EAAAE573E142405BDE663BF0D44B40
+ 15249 | 4430318493 |       5 | 205638 | 0101000020E61000008E452E933CE1424013BE52F1DAD44B40
+(6 rows)
+
+student=> \ir paths.sql 
+psql:paths.sql:11: ERROR:  function st_makeline(geography) does not exist
+LINE 7:       ST_MakeLine(n.pos)
+              ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+student=> \ir paths.sql 
+student=> \ir paths.sql 
+student=> \ir paths.sql 
+student=> \ir paths.sql 
+student=> \ir ways.sql 
+ALTER TABLE
+student=> \d osm.ways
+                                            Table "osm.ways"
+   Column    |            Type            | Collation | Nullable |                Default                
+-------------+----------------------------+-----------+----------+---------------------------------------
+ iid         | bigint                     |           | not null | nextval('osm.ways_iid_seq'::regclass)
+ iid_rawdata | bigint                     |           | not null | 
+ data        | xml                        |           |          | 
+ osmid       | bigint                     |           |          | 
+ apath       | geography(LineString,4326) |           |          | 
+Indexes:
+    "ways_pkey" PRIMARY KEY, btree (iid)
+Foreign-key constraints:
+    "ways_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+
+student=> \ir ways2.sql 
+START TRANSACTION
+CREATE FUNCTION
+CREATE TRIGGER
+ROLLBACK
+student=> \ir ways2.sql 
+START TRANSACTION
+CREATE FUNCTION
+CREATE TRIGGER
+COMMIT
+student=> truncate osm.raw_data cascade ;
+NOTICE:  truncate cascades to table "nodes"
+NOTICE:  truncate cascades to table "ways"
+NOTICE:  truncate cascades to table "relations"
+TRUNCATE TABLE
+student=> \q
+student@student-VirtualBox:~/WORK/maps$ python3 load_data.py 
+student@student-VirtualBox:~/WORK/maps$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> select osm.read_raw_data() ;
+ERROR:  column "apath" is of type geography but expression is of type text
+LINE 19:       set apath = dt.apath,
+                           ^
+HINT:  You will need to rewrite or cast the expression.
+QUERY:  with dt as (
+      select 
+            NEW.iid as iid,
+            (xpath('/way/@id', NEW.data))[1]::text::bigint as osmid,
+            ST_AsText(
+               Geography(
+                  ST_MakeLine(
+                     Geometry(n.pos)
+                     order by nd.ordinal
+                  )
+               )
+            ) as apath
+         from unnest(xpath('/way/nd/@ref', NEW.data)) 
+                   with ordinality as nd (ref, ordinal)
+         left outer join osm.nodes as n
+            on nd.ref::text::bigint = n.osmid 
+   )
+   update osm.ways
+      set apath = dt.apath,
+          osmid = dt.osmid
+      from dt
+      where dt.iid = osm.ways.iid
+CONTEXT:  PL/pgSQL function new_way() line 4 at SQL statement
+SQL statement "insert into ways ( iid_rawdata, data)
+   select r.iid, n
+      from raw as r,
+            unnest(xpath('//way', r.data)) as n"
+PL/pgSQL function read_raw_data() line 25 at SQL statement
+student=> \ir ways2.sql                  
+START TRANSACTION
+CREATE FUNCTION
+COMMIT
+student=> select osm.read_raw_data() ;
+ read_raw_data 
+---------------
+         49270
+(1 row)
+
+student=> \ir ways.sql 
+psql:ways.sql:4: NOTICE:  column "osmid" of relation "ways" already exists, skipping
+psql:ways.sql:4: NOTICE:  column "apath" of relation "ways" already exists, skipping
+ALTER TABLE
+student=> \d osm.ways
+                                            Table "osm.ways"
+   Column    |            Type            | Collation | Nullable |                Default                
+-------------+----------------------------+-----------+----------+---------------------------------------
+ iid         | bigint                     |           | not null | nextval('osm.ways_iid_seq'::regclass)
+ iid_rawdata | bigint                     |           | not null | 
+ data        | xml                        |           |          | 
+ osmid       | bigint                     |           |          | 
+ apath       | geography(LineString,4326) |           |          | 
+ tags        | hstore                     |           |          | 
+Indexes:
+    "ways_pkey" PRIMARY KEY, btree (iid)
+Foreign-key constraints:
+    "ways_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+Triggers:
+    new_way_trigger AFTER INSERT ON osm.ways FOR EACH ROW EXECUTE PROCEDURE osm.new_way()
+
+student=> truncate osm.raw_data cascade ;
+NOTICE:  truncate cascades to table "nodes"
+NOTICE:  truncate cascades to table "ways"
+NOTICE:  truncate cascades to table "relations"
+TRUNCATE TABLE
+student=> \q
+student@student-VirtualBox:~/WORK/maps$ python3 load_data.py 
+student@student-VirtualBox:~/WORK/maps$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> select osm.read_raw_data() ;   
+^CCancel request sent
+ERROR:  canceling statement due to user request
+CONTEXT:  SQL statement "with dt as (
+      select 
+            NEW.iid as iid,
+            (xpath('/way/@id', NEW.data))[1]::text::bigint as osmid,
+               Geography(
+                  ST_MakeLine(
+                     Geometry(n.pos)
+                     order by nd.ordinal
+                  )
+            ) as apath
+         from unnest(xpath('/way/nd/@ref', NEW.data)) 
+                   with ordinality as nd (ref, ordinal)
+         left outer join osm.nodes as n
+            on nd.ref::text::bigint = n.osmid 
+   )
+   update osm.ways
+      set apath = dt.apath,
+          osmid = dt.osmid
+      from dt
+      where dt.iid = osm.ways.iid"
+PL/pgSQL function new_way() line 4 at SQL statement
+SQL statement "insert into ways ( iid_rawdata, data)
+   select r.iid, n
+      from raw as r,
+            unnest(xpath('//way', r.data)) as n"
+PL/pgSQL function read_raw_data() line 25 at SQL statement
+student=> truncate osm.raw_data cascade ;
+NOTICE:  truncate cascades to table "nodes"
+NOTICE:  truncate cascades to table "ways"
+NOTICE:  truncate cascades to table "relations"
+TRUNCATE TABLE
+student=> \q
+student@student-VirtualBox:~/WORK/maps$ python3 load_data.py 
+student@student-VirtualBox:~/WORK/maps$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> \ir ways2.sql 
+START TRANSACTION
+CREATE FUNCTION
+COMMIT
+student=> select osm.read_raw_data() ;   
+ERROR:  missing FROM-clause entry for table "tags"
+LINE 21:           tags  = dt.tags.
+                           ^
+QUERY:  with dt as (
+      select 
+            NEW.iid as iid,
+            (xpath('/way/@id', NEW.data))[1]::text::bigint as osmid,
+               Geography(
+                  ST_MakeLine(
+                     Geometry(n.pos)
+                     order by nd.ordinal
+                  )
+            ) as apath,
+            hstore( (xpath('/way/tag/@k', NEW.data))::text[],
+                    (xpath('/way/tag/@k', NEW.data))::text[] ) as tags
+         from unnest(xpath('/way/nd/@ref', NEW.data)) 
+                   with ordinality as nd (ref, ordinal)
+         left outer join osm.nodes as n
+            on nd.ref::text::bigint = n.osmid 
+   )
+   update osm.ways
+      set apath = dt.apath,
+          osmid = dt.osmid,
+          tags  = dt.tags.
+          data  = NULL
+      from dt
+      where dt.iid = osm.ways.iid
+CONTEXT:  PL/pgSQL function new_way() line 4 at SQL statement
+SQL statement "insert into ways ( iid_rawdata, data)
+   select r.iid, n
+      from raw as r,
+            unnest(xpath('//way', r.data)) as n"
+PL/pgSQL function read_raw_data() line 25 at SQL statement
+student=> select osm.read_raw_data() ;
+^CCancel request sent
+ERROR:  canceling statement due to user request
+CONTEXT:  SQL statement "insert into ways ( iid_rawdata, data)
+   select r.iid, n
+      from raw as r,
+            unnest(xpath('//way', r.data)) as n"
+PL/pgSQL function read_raw_data() line 25 at SQL statement
+student=> truncate osm.raw_data cascade ;
+NOTICE:  truncate cascades to table "nodes"
+NOTICE:  truncate cascades to table "ways"
+NOTICE:  truncate cascades to table "relations"
+TRUNCATE TABLE
+student=> \q
+student@student-VirtualBox:~/WORK/maps$ python3 load_data.py 
+student@student-VirtualBox:~/WORK/maps$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> \ir ways2.sql                  
+START TRANSACTION
+psql:ways2.sql:41: ERROR:  syntax error at or near "data"
+LINE 32:           data  = NULL
+                   ^
+ROLLBACK
+student=> \q
+student@student-VirtualBox:~/WORK/maps$ python3 load_data.py 
+student@student-VirtualBox:~/WORK/maps$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> truncate osm.raw_data cascade ;
+NOTICE:  truncate cascades to table "nodes"
+NOTICE:  truncate cascades to table "ways"
+NOTICE:  truncate cascades to table "relations"
+TRUNCATE TABLE
+student=> \q
+student@student-VirtualBox:~/WORK/maps$ python3 load_data.py 
+student@student-VirtualBox:~/WORK/maps$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> \ir ways2.sql 
+START TRANSACTION
+CREATE FUNCTION
+COMMIT
+student=> select osm.read_raw_data() ;   
+ read_raw_data 
+---------------
+         49270
+(1 row)
+
+student=> select tags from osm.ways ;
+student=> \?
+student=> \dy
+              List of event triggers
+ Name | Event | Owner | Enabled | Procedure | Tags 
+------+-------+-------+---------+-----------+------
+(0 rows)
+
+student=> \dy osm.
+              List of event triggers
+ Name | Event | Owner | Enabled | Procedure | Tags 
+------+-------+-------+---------+-----------+------
+(0 rows)
+
+student=> select * pg_triggers ;
+ERROR:  syntax error at or near "pg_triggers"
+LINE 1: select * pg_triggers ;
+                 ^
+student=> select * from pg_triggers ;
+ERROR:  relation "pg_triggers" does not exist
+LINE 1: select * from pg_triggers ;
+                      ^
+student=> select * from pg_trigger ; 
+student=> \dt osm.ways
+        List of relations
+ Schema | Name | Type  |  Owner  
+--------+------+-------+---------
+ osm    | ways | table | student
+(1 row)
+
+student=> \d osm.ways 
+                                            Table "osm.ways"
+   Column    |            Type            | Collation | Nullable |                Default                
+-------------+----------------------------+-----------+----------+---------------------------------------
+ iid         | bigint                     |           | not null | nextval('osm.ways_iid_seq'::regclass)
+ iid_rawdata | bigint                     |           | not null | 
+ data        | xml                        |           |          | 
+ osmid       | bigint                     |           |          | 
+ apath       | geography(LineString,4326) |           |          | 
+ tags        | hstore                     |           |          | 
+Indexes:
+    "ways_pkey" PRIMARY KEY, btree (iid)
+Foreign-key constraints:
+    "ways_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+Triggers:
+    new_way_trigger AFTER INSERT ON osm.ways FOR EACH ROW EXECUTE PROCEDURE osm.new_way()
+
+student=> \d osm.
+                                          Table "osm.nodes"
+   Column    |         Type          | Collation | Nullable |                Default                 
+-------------+-----------------------+-----------+----------+----------------------------------------
+ iid         | bigint                |           | not null | nextval('osm.nodes_iid_seq'::regclass)
+ iid_rawdata | bigint                |           | not null | 
+ data        | xml                   |           |          | 
+ osmid       | bigint                |           |          | 
+ pos         | geography(Point,4326) |           |          | 
+ tags        | hstore                |           |          | 
+Indexes:
+    "nodes_pkey" PRIMARY KEY, btree (iid)
+Foreign-key constraints:
+    "nodes_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+Triggers:
+    on_new_nodes_inserted AFTER INSERT ON osm.nodes REFERENCING NEW TABLE AS new_nodes FOR EACH STATEMENT EXECUTE PROCEDURE osm.after_new_nodes_inserted()
+
+                         Sequence "osm.nodes_iid_seq"
+  Type  | Start | Minimum |       Maximum       | Increment | Cycles? | Cache 
+--------+-------+---------+---------------------+-----------+---------+-------
+ bigint |     1 |       1 | 9223372036854775807 |         1 | no      |     1
+Owned by: osm.nodes.iid
+
+    Index "osm.nodes_pkey"
+ Column |  Type  | Definition 
+--------+--------+------------
+ iid    | bigint | iid
+primary key, btree, for table "osm.nodes"
+
+                                Table "osm.raw_data"
+ Column |  Type  | Collation | Nullable |                  Default                  
+--------+--------+-----------+----------+-------------------------------------------
+ iid    | bigint |           | not null | nextval('osm.raw_data_iid_seq'::regclass)
+ data   | xml    |           |          | 
+Indexes:
+    "raw_data_pkey" PRIMARY KEY, btree (iid)
+Referenced by:
+    TABLE "osm.nodes" CONSTRAINT "nodes_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+    TABLE "osm.relations" CONSTRAINT "relations_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+    TABLE "osm.ways" CONSTRAINT "ways_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+
+                       Sequence "osm.raw_data_iid_seq"
+  Type  | Start | Minimum |       Maximum       | Increment | Cycles? | Cache 
+--------+-------+---------+---------------------+-----------+---------+-------
+ bigint |     1 |       1 | 9223372036854775807 |         1 | no      |     1
+Owned by: osm.raw_data.iid
+
+  Index "osm.raw_data_pkey"
+ Column |  Type  | Definition 
+--------+--------+------------
+ iid    | bigint | iid
+primary key, btree, for table "osm.raw_data"
+
+                                  Table "osm.relations"
+   Column    |  Type  | Collation | Nullable |                  Default                   
+-------------+--------+-----------+----------+--------------------------------------------
+ iid         | bigint |           | not null | nextval('osm.relations_iid_seq'::regclass)
+ iid_rawdata | bigint |           | not null | 
+ data        | xml    |           |          | 
+Indexes:
+    "relations_pkey" PRIMARY KEY, btree (iid)
+Foreign-key constraints:
+    "relations_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+
+                       Sequence "osm.relations_iid_seq"
+  Type  | Start | Minimum |       Maximum       | Increment | Cycles? | Cache 
+--------+-------+---------+---------------------+-----------+---------+-------
+ bigint |     1 |       1 | 9223372036854775807 |         1 | no      |     1
+Owned by: osm.relations.iid
+
+  Index "osm.relations_pkey"
+ Column |  Type  | Definition 
+--------+--------+------------
+ iid    | bigint | iid
+primary key, btree, for table "osm.relations"
+
+                                            Table "osm.ways"
+   Column    |            Type            | Collation | Nullable |                Default                
+-------------+----------------------------+-----------+----------+---------------------------------------
+ iid         | bigint                     |           | not null | nextval('osm.ways_iid_seq'::regclass)
+ iid_rawdata | bigint                     |           | not null | 
+ data        | xml                        |           |          | 
+ osmid       | bigint                     |           |          | 
+ apath       | geography(LineString,4326) |           |          | 
+ tags        | hstore                     |           |          | 
+Indexes:
+    "ways_pkey" PRIMARY KEY, btree (iid)
+Foreign-key constraints:
+    "ways_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+Triggers:
+    new_way_trigger AFTER INSERT ON osm.ways FOR EACH ROW EXECUTE PROCEDURE osm.new_way()
+
+                         Sequence "osm.ways_iid_seq"
+  Type  | Start | Minimum |       Maximum       | Increment | Cycles? | Cache 
+--------+-------+---------+---------------------+-----------+---------+-------
+ bigint |     1 |       1 | 9223372036854775807 |         1 | no      |     1
+Owned by: osm.ways.iid
+
+    Index "osm.ways_pkey"
+ Column |  Type  | Definition 
+--------+--------+------------
+ iid    | bigint | iid
+primary key, btree, for table "osm.ways"
+
+student=> \dt osm.
+          List of relations
+ Schema |   Name    | Type  |  Owner  
+--------+-----------+-------+---------
+ osm    | nodes     | table | student
+ osm    | raw_data  | table | student
+ osm    | relations | table | student
+ osm    | ways      | table | student
+(4 rows)
+
+student=> \dt osm
+Did not find any relation named "osm".
+student=> \dt osm.ways 
+        List of relations
+ Schema | Name | Type  |  Owner  
+--------+------+-------+---------
+ osm    | ways | table | student
+(1 row)
+
+student=> select * from pg_trigger ;
+student=> \x
+Expanded display is on.
+student=> select * from pg_trigger ;
+student=> \x
+Expanded display is off.
+student=> \d osm.ways
+                                            Table "osm.ways"
+   Column    |            Type            | Collation | Nullable |                Default                
+-------------+----------------------------+-----------+----------+---------------------------------------
+ iid         | bigint                     |           | not null | nextval('osm.ways_iid_seq'::regclass)
+ iid_rawdata | bigint                     |           | not null | 
+ data        | xml                        |           |          | 
+ osmid       | bigint                     |           |          | 
+ apath       | geography(LineString,4326) |           |          | 
+ tags        | hstore                     |           |          | 
+Indexes:
+    "ways_pkey" PRIMARY KEY, btree (iid)
+Foreign-key constraints:
+    "ways_iid_rawdata_fkey" FOREIGN KEY (iid_rawdata) REFERENCES osm.raw_data(iid)
+Triggers:
+    new_way_trigger AFTER INSERT ON osm.ways FOR EACH ROW EXECUTE PROCEDURE osm.new_way()
+
+student=> \q
+student@student-VirtualBox:~/WORK/maps$ cd ../transparent/
+student@student-VirtualBox:~/WORK/transparent$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+student=> \ir general.sql 
+START TRANSACTION
+SET
+CREATE SCHEMA
+CREATE DOMAIN
+CREATE SEQUENCE
+CREATE TABLE
+ALTER SEQUENCE
+CREATE TABLE
+CREATE TABLE
+ROLLBACK
+student=> \ir general.sql 
+START TRANSACTION
+SET
+CREATE SCHEMA
+CREATE DOMAIN
+CREATE SEQUENCE
+CREATE TABLE
+ALTER SEQUENCE
+CREATE TABLE
+CREATE TABLE
+COMMIT
+student=> select * from transparent.worker ;
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+(0 rows)
+
+student=> select * from transparent.tokar_data ;
+ iid | category 
+-----+----------
+(0 rows)
+
+student=> select * from transparent.tokar ;     
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+(0 rows)
+
+student=> \dt transparent.
+             List of relations
+   Schema    |    Name    | Type  |  Owner  
+-------------+------------+-------+---------
+ transparent | tokar      | table | student
+ transparent | tokar_data | table | student
+ transparent | worker     | table | student
+(3 rows)
+
+student=> insert into transparent.worker (familia) values ('Иванов');
+INSERT 0 1
+student=> select * from transparent.worker ;
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   1 | Иванов  |         |       1
+(1 row)
+
+student=> \d transparent.tokar
+                                     Table "transparent.tokar"
+  Column  |        Type        | Collation | Nullable |                   Default                   
+----------+--------------------+-----------+----------+---------------------------------------------
+ iid      | integer            |           | not null | nextval('transparent.worker_seq'::regclass)
+ familia  | text               |           | not null | 
+ tnumber  | text               |           |          | 
+ trating  | transparent.rating |           | not null | 1
+ category | integer            |           |          | 
+
+student=> \d transparent.tokar_data
+           Table "transparent.tokar_data"
+  Column  |  Type   | Collation | Nullable | Default 
+----------+---------+-----------+----------+---------
+ iid      | integer |           | not null | 
+ category | integer |           |          | 
+Indexes:
+    "tokar_data_pkey" PRIMARY KEY, btree (iid)
+
+student=> insert into transparent.tokar_data (iid, category) values (1, 25) ;
+INSERT 0 1
+student=> select * from transparent.worker ;                         
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   1 | Иванов  |         |       1
+(1 row)
+
+student=> select * from transparent.tokar_data ;
+ iid | category 
+-----+----------
+   1 |       25
+(1 row)
+
+student=> \ir tokar.sql 
+START TRANSACTION
+CREATE RULE
+COMMIT
+student=> select * from transparent.tokar ; 
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   1 | Иванов  |         |       1 |       25
+(1 row)
+
+student=> select * from pg_trigger ;
+student=> \ir tokar_insert.sql             
+START TRANSACTION
+CREATE FUNCTION
+psql:tokar_insert.sql:31: ERROR:  function new_tokar_inserted() does not exist
+ROLLBACK
+student=> \ir tokar_insert.sql 
+START TRANSACTION
+CREATE FUNCTION
+CREATE TRIGGER
+ROLLBACK
+student=> \ir tokar_insert.sql 
+START TRANSACTION
+CREATE FUNCTION
+CREATE TRIGGER
+COMMIT
+student=> insert into transparent.tokar (familia, category)
+student->    values ('Петров', 48 ) ;
+INSERT 0 1
+student=> insert into transparent.tokar (familia, category)
+   values ('Пупкин',148 ) returning * ;
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   3 | Пупкин  |         |       1 |      148
+(1 row)
+
+INSERT 0 1
+student=> select * from transparent.tokar ;
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   1 | Иванов  |         |       1 |       25
+   2 | Петров  |         |       1 |       48
+   3 | Пупкин  |         |       1 |      148
+(3 rows)
+
+student=> select * from transparent.worker ;
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   1 | Иванов  |         |       1
+   2 | Петров  |         |       1
+   3 | Пупкин  |         |       1
+(3 rows)
+
+student=> insert into transparent.worker (familia) values ('Сидоров') ;
+INSERT 0 1
+student=> select * from transparent.worker ;                            
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   1 | Иванов  |         |       1
+   2 | Петров  |         |       1
+   3 | Пупкин  |         |       1
+   4 | Сидоров |         |       1
+(4 rows)
+
+student=> select * from transparent.tokar ;                            
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   1 | Иванов  |         |       1 |       25
+   2 | Петров  |         |       1 |       48
+   3 | Пупкин  |         |       1 |      148
+(3 rows)
+
+student=> \ir tokar_update.sql 
+START TRANSACTION
+psql:tokar_update.sql:29: ERROR:  syntax error at or near "finction"
+LINE 1: create or replace finction
+                          ^
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+psql:tokar_update.sql:29: ERROR:  syntax error at or near "create"
+LINE 22: create trigger tokar_update_trigger
+         ^
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+CREATE FUNCTION
+CREATE TRIGGER
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+psql:tokar_update.sql:9: ERROR:  syntax error at or near "on"
+LINE 6:          on delete cascade
+                 ^
+psql:tokar_update.sql:34: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:40: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:58: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:64: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+psql:tokar_update.sql:9: ERROR:  syntax error at or near "on"
+LINE 6:          on delete cascade
+                 ^
+psql:tokar_update.sql:34: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:40: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:58: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:64: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+ALTER TABLE
+CREATE FUNCTION
+CREATE TRIGGER
+CREATE FUNCTION
+CREATE TRIGGER
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+ALTER TABLE
+CREATE FUNCTION
+CREATE TRIGGER
+CREATE FUNCTION
+CREATE TRIGGER
+COMMIT
+student=> select * from transparent.tokar ;
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   1 | Иванов  |         |       1 |       25
+   2 | Петров  |         |       1 |       48
+   3 | Пупкин  |         |       1 |      148
+(3 rows)
+
+student=> update transparent.tokar
+student->    set tnumber = '116'
+student->    where iid = 1 ;
+ERROR:  missing FROM-clause entry for table "worker"
+LINE 3:       where transparent.worker.iid = NEW.iid
+                    ^
+QUERY:  update transparent.tokar_data
+      set category = NEW.category
+      where transparent.worker.iid = NEW.iid
+CONTEXT:  PL/pgSQL function transparent.tokar_update() line 9 at SQL statement
+student=> \ir tokar_update.sql             
+START TRANSACTION
+psql:tokar_update.sql:9: ERROR:  constraint "tokar_data_worker_fkey" for relation "tokar_data" already exists
+psql:tokar_update.sql:34: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:40: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:58: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:64: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+CREATE FUNCTION
+psql:tokar_update.sql:40: ERROR:  trigger "tokar_update_trigger" for relation "tokar" already exists
+psql:tokar_update.sql:58: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:tokar_update.sql:64: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK
+student=> \ir tokar_update.sql 
+START TRANSACTION
+CREATE FUNCTION
+CREATE FUNCTION
+COMMIT
+student=> update transparent.tokar
+   set tnumber = '116'
+   where iid = 1 ;
+UPDATE 1
+student=> select * from transparent.tokar ;
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   2 | Петров  |         |       1 |       48
+   3 | Пупкин  |         |       1 |      148
+   1 | Иванов  | 116     |       1 |       25
+(3 rows)
+
+student=> select * from transparent.worker ;
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   2 | Петров  |         |       1
+   3 | Пупкин  |         |       1
+   4 | Сидоров |         |       1
+   1 | Иванов  | 116     |       1
+(4 rows)
+
+student=> update transparent.tokar               
+   set tnumber = '-1' 
+   where iid = 1 ;
+UPDATE 1
+student=> delete from transparent.tokar where iid = -1 ;
+DELETE 0
+student=> select * from transparent.worker ;            
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   2 | Петров  |         |       1
+   3 | Пупкин  |         |       1
+   4 | Сидоров |         |       1
+   1 | Иванов  | -1      |       1
+(4 rows)
+
+student=> update transparent.worker 
+student->    set iid = -2
+student->    where iid = 2 ;
+UPDATE 1
+student=> select * from transparent.worker ;
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   3 | Пупкин  |         |       1
+   4 | Сидоров |         |       1
+   1 | Иванов  | -1      |       1
+  -2 | Петров  |         |       1
+(4 rows)
+
+student=> select * from transparent.tokar ; 
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   3 | Пупкин  |         |       1 |      148
+   1 | Иванов  | -1      |       1 |       25
+  -2 | Петров  |         |       1 |       48
+(3 rows)
+
+student=> delete from transparent.tokar where iid = -2 ;
+DELETE 1
+student=> select * from transparent.tokar ;             
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   3 | Пупкин  |         |       1 |      148
+   1 | Иванов  | -1      |       1 |       25
+(2 rows)
+
+student=> select * from transparent.worker ;             
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   3 | Пупкин  |         |       1
+   4 | Сидоров |         |       1
+   1 | Иванов  | -1      |       1
+(3 rows)
+
+student=> delete from transparent.tokar where iid = 1 ;  
+DELETE 1
+student=> select * from transparent.worker ;           
+ iid | familia | tnumber | trating 
+-----+---------+---------+---------
+   3 | Пупкин  |         |       1
+   4 | Сидоров |         |       1
+(2 rows)
+
+student=> select * from transparent.tokar ;            
+ iid | familia | tnumber | trating | category 
+-----+---------+---------+---------+----------
+   3 | Пупкин  |         |       1 |      148
+(1 row)
+
+student=> select * from transparent.tokar_data ;
+ iid | category 
+-----+----------
+   3 |      148
+(1 row)
+
+student=> \dt
+              List of relations
+ Schema |      Name       | Type  |  Owner   
+--------+-----------------+-------+----------
+ public | spatial_ref_sys | table | postgres
+(1 row)
+
+student=> \dt transparent.
+             List of relations
+   Schema    |    Name    | Type  |  Owner  
+-------------+------------+-------+---------
+ transparent | tokar_data | table | student
+ transparent | worker     | table | student
+(2 rows)
+
+student=> \ir contrig.sql 
+CREATE TABLE
+psql:contrig.sql:24: ERROR:  syntax error at or near "static"
+LINE 5:    static
+           ^
+psql:contrig.sql:32: ERROR:  syntax error at or near ","
+LINE 2:    after insert, update, delete
+                       ^
+student=> \ir contrig.sql 
+psql:contrig.sql:4: ERROR:  relation "example01" already exists
+psql:contrig.sql:24: ERROR:  syntax error at or near "static"
+LINE 5:    static
+           ^
+psql:contrig.sql:32: ERROR:  function check_example01() does not exist
+student=> \ir contrig.sql 
+psql:contrig.sql:4: ERROR:  relation "example01" already exists
+psql:contrig.sql:24: ERROR:  no language specified
+psql:contrig.sql:32: ERROR:  function check_example01() does not exist
+student=> \ir contrig.sql 
+psql:contrig.sql:4: ERROR:  relation "example01" already exists
+psql:contrig.sql:25: ERROR:  syntax error at or near "with"
+LINE 16: ...  raise 'sum in column x must be even (got %)', y with errco...
+                                                              ^
+psql:contrig.sql:33: ERROR:  function check_example01() does not exist
+student=> \ir contrig.sql 
+psql:contrig.sql:4: ERROR:  relation "example01" already exists
+CREATE FUNCTION
+CREATE TRIGGER
+student=> insert into example01(x) values (2) ;
+INSERT 0 1
+student=> select * from example01 ;
+ iid | x 
+-----+---
+   1 | 2
+(1 row)
+
+student=> insert into example01(x) values (1) ; 
+INSERT 0 1
+student=> select * from example01 ;            
+ iid | x 
+-----+---
+   1 | 2
+   2 | 1
+(2 rows)
+
+student=> select * from example01 ;
+ iid | x 
+-----+---
+   1 | 2
+   2 | 1
+(2 rows)
+
+student=> insert into example01(x) values (1) ;
+ERROR:  sum in column x must be even (got 3)
+CONTEXT:  PL/pgSQL function check_example01() line 9 at RAISE
+student=> insert into example01(x) values (2) ; 
+ERROR:  sum in column x must be even (got 3)
+CONTEXT:  PL/pgSQL function check_example01() line 9 at RAISE
+student=> delete from example01 where iid = 1 ;
+ERROR:  sum in column x must be even (got 3)
+CONTEXT:  PL/pgSQL function check_example01() line 9 at RAISE
+student=> delete from example01 where iid = 2 ;
+ERROR:  sum in column x must be even (got 3)
+CONTEXT:  PL/pgSQL function check_example01() line 9 at RAISE
+student=> \ir contrig.sql                                              
+psql:contrig.sql:31: ERROR:  syntax error at or near ";"
+LINE 30: END ;
+             ^
+student=> \ir contrig.sql 
+CREATE FUNCTION
+student=> delete from example01 where iid = 2 ;
+DELETE 1
+student=> select * from example01 ;            
+ iid | x 
+-----+---
+   1 | 2
+(1 row)
+
+student=> delete from example01
+student-> ;
+DELETE 1
+student=> insert into example01(x) values (1) ; 
+ERROR:  record "old" is not assigned yet
+DETAIL:  The tuple structure of a not-yet-assigned record is indeterminate.
+CONTEXT:  PL/pgSQL function check_example01() line 12 at assignment
+student=> insert into example01(x) values (1), (1) ;
+ERROR:  record "old" is not assigned yet
+DETAIL:  The tuple structure of a not-yet-assigned record is indeterminate.
+CONTEXT:  PL/pgSQL function check_example01() line 12 at assignment
+student=> history
+student-> ;
+ERROR:  syntax error at or near "history"
+LINE 1: history
+        ^
+student=> select * from pg_available_extencions ;
+ERROR:  relation "pg_available_extencions" does not exist
+LINE 1: select * from pg_available_extencions ;
+                      ^
+student=> select * from pg_available_extensions ; 
+student=> /?
+student-> \?
+student-> \dx
+                                      List of installed extensions
+    Name    | Version |   Schema   |                             Description                             
+------------+---------+------------+---------------------------------------------------------------------
+ hstore     | 1.4     | public     | data type for storing sets of (key, value) pairs
+ plpgsql    | 1.0     | pg_catalog | PL/pgSQL procedural language
+ plpython3u | 1.0     | pg_catalog | PL/Python3U untrusted procedural language
+ postgis    | 2.4.3   | public     | PostGIS geometry, geography, and raster spatial types and functions
+(4 rows)
+
+student-> 
+student-> ;
+ERROR:  syntax error at or near "/?"
+LINE 1: /?
+        ^
+student=> \q
+student@student-VirtualBox:~/WORK/transparent$ sudo su postgres
+[sudo] пароль для student: 
+postgres@student-VirtualBox:/home/student/WORK/transparent$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+postgres=# create database master owner student ;
+CREATE DATABASE
+postgres=# create database replica owner student ;
+CREATE DATABASE
+postgres=# \q
+postgres@student-VirtualBox:/home/student/WORK/transparent$ exit
+exit
+student@student-VirtualBox:~/WORK/transparent$ psql replica
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+replica=> \ir replica.sql 
+psql:replica.sql:3: ERROR:  must be superuser to create subscriptions
+replica=> \q
+student@student-VirtualBox:~/WORK/transparent$ sudo su postgres
+postgres@student-VirtualBox:/home/student/WORK/transparent$ psql
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+postgres=# alter role student with superuser ;
+ALTER ROLE
+postgres=# \q
+postgres@student-VirtualBox:/home/student/WORK/transparent$ exit
+exit
+student@student-VirtualBox:~/WORK/transparent$ psql replica 
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+replica=# \ir replica.sql 
+psql:replica.sql:3: ERROR:  could not create replication slot "important_data_get": ERROR:  logical decoding requires wal_level >= logical
+replica=# \q
+student@student-VirtualBox:~/WORK/transparent$ psql replica 
+psql (10.5 (Ubuntu 10.5-0ubuntu0.18.04))
+Type "help" for help.
+
+replica=# \ir replica.sql 
+^CCancel request sent
+psql:replica.sql:3: ERROR:  canceling statement due to user request
+replica=# \ir replica.sql 
+^CCancel request sent
+psql:replica.sql:3: ERROR:  canceling statement due to user request
+replica=# \q
+student@student-VirtualBox:~/WORK/transparent$ exit
+exit
+
+Script done on 2018-09-21 17:04:15+0300
+student@student-VirtualBox:~$ 
